@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, Write};
+use std::sync::{Arc, Mutex};
 
 use tokio::io::AsyncWriteExt;
 
 use anyhow::Result;
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 
 type Key = String;
 type Val = String;
@@ -150,8 +151,36 @@ fn replay(file: File) -> Result<HashMap<String, String>> {
     Ok(hashmap)
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+use nix::{
+    sys::wait::waitpid,
+    unistd::{fork, write, ForkResult},
+};
+mod follower;
+use follower::*;
+
+async fn setup_follower() -> Result<()> {
+    let listener = TcpListener::bind("localhost:48000").await?;
+    let mut hashmap = HashMap::default();
+    if let Ok(file) = OpenOptions::new().read(true).open("follower.db") {
+        hashmap = replay(file)?;
+    };
+    let log_file = create_log_file()?;
+    let file = Arc::new(Mutex::new(log_file));
+    let hashmap = Arc::new(Mutex::new(hashmap));
+
+    loop {
+        let (mut socket, _addr) = listener.accept().await?;
+        let mut hashmap = hashmap.clone();
+        let mut file = file.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handle_client(&mut socket, &mut file, &mut hashmap).await {
+                eprintln!("Error = {:?}", e);
+            }
+        });
+    }
+}
+
+async fn setup_leader() -> Result<()> {
     let mut rl = DefaultEditor::new()?;
     let mut stream = TcpStream::connect("localhost:48000").await?;
 
@@ -171,11 +200,7 @@ async fn main() -> Result<()> {
                 let command = Command::from(line);
                 persist_command(&mut file, &mut hashmap, &mut stream, &command).await?;
             }
-            Err(ReadlineError::Interrupted) => {
-                stream.shutdown().await?;
-                break;
-            }
-            Err(ReadlineError::Eof) => {
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 stream.shutdown().await?;
                 break;
             }
@@ -187,4 +212,16 @@ async fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    match unsafe { fork() } {
+        Ok(ForkResult::Parent { .. }) => {}
+        Ok(ForkResult::Child) => {
+            setup_follower().await?;
+        }
+        Err(_) => println!("Fork failed"),
+    }
+    setup_leader().await
 }

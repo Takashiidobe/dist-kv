@@ -5,7 +5,6 @@ use std::io::Write;
 use tokio::io::AsyncBufReadExt;
 
 use tokio::io::BufReader;
-use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 
 use anyhow::Result;
@@ -42,7 +41,7 @@ impl From<String> for Command {
     }
 }
 
-async fn handle_client(
+pub async fn handle_client(
     socket: &mut TcpStream,
     file: &mut SyncFile,
     hashmap: &mut SyncDb,
@@ -80,14 +79,14 @@ async fn handle_client(
     }
 }
 
-fn create_log_file() -> Result<File> {
+pub fn create_log_file() -> Result<File> {
     Ok(OpenOptions::new()
         .append(true)
         .create(true)
         .open("follower.db")?)
 }
 
-fn replay(file: File) -> Result<HashMap<String, String>> {
+pub fn replay(file: File) -> Result<HashMap<String, String>> {
     let mut hashmap = HashMap::default();
     for line in std::io::BufReader::new(file).lines() {
         let line = line?;
@@ -102,29 +101,4 @@ fn replay(file: File) -> Result<HashMap<String, String>> {
         }
     }
     Ok(hashmap)
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let listener = TcpListener::bind("localhost:48000").await?;
-    let mut hashmap = HashMap::default();
-    if let Ok(file) = OpenOptions::new().read(true).open("follower.db") {
-        hashmap = replay(file)?;
-    };
-    let log_file = create_log_file()?;
-    let file = Arc::new(Mutex::new(log_file));
-    let hashmap = Arc::new(Mutex::new(hashmap));
-
-    dbg!(&hashmap);
-
-    loop {
-        let (mut socket, _addr) = listener.accept().await?;
-        let mut hashmap = hashmap.clone();
-        let mut file = file.clone();
-        tokio::spawn(async move {
-            if let Err(e) = handle_client(&mut socket, &mut file, &mut hashmap).await {
-                eprintln!("Error = {:?}", e);
-            }
-        });
-    }
 }

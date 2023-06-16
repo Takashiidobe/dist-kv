@@ -2,17 +2,9 @@
 name = "dist-kv"
 version = "0.1.0"
 edition = "2021"
-default-run = "leader"
-
-[[bin]]
-name = "leader"
-path = "src/leader/main.rs"
-
-[[bin]]
-name = "follower"
-path = "src/follower/main.rs"
 
 [dependencies]
 anyhow = "1.0.70"
+nix = "0.26.2"
 rustyline = "11.0.0"
 tokio = { version = "1.28.0", features = ["full"] }
