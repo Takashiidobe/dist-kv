@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::fs::OpenOptions;
-use std::io::BufRead;
 use std::io::Write;
 use tokio::io::AsyncBufReadExt;
 
@@ -77,28 +76,4 @@ pub async fn handle_client(
             }
         }
     }
-}
-
-pub fn create_log_file() -> Result<File> {
-    Ok(OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open("follower.db")?)
-}
-
-pub fn replay(file: File) -> Result<HashMap<String, String>> {
-    let mut hashmap = HashMap::default();
-    for line in std::io::BufReader::new(file).lines() {
-        let line = line?;
-        match Command::from(line) {
-            Command::Set(key, val) => {
-                hashmap.insert(key, val);
-            }
-            Command::Delete(key) => {
-                hashmap.remove(&key);
-            }
-            Command::Unknown => {}
-        }
-    }
-    Ok(hashmap)
 }

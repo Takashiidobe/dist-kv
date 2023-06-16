@@ -65,11 +65,8 @@ impl fmt::Display for Response {
     }
 }
 
-fn create_log_file() -> Result<File> {
-    Ok(std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open("log.db")?)
+pub fn create_log_file(path: &str) -> Result<File> {
+    Ok(OpenOptions::new().append(true).create(true).open(path)?)
 }
 
 fn run_command(hashmap: &mut Db, command: &Command) -> Response {
@@ -151,10 +148,7 @@ fn replay(file: File) -> Result<HashMap<String, String>> {
     Ok(hashmap)
 }
 
-use nix::{
-    sys::wait::waitpid,
-    unistd::{fork, write, ForkResult},
-};
+use nix::unistd::{fork, ForkResult};
 mod follower;
 use follower::*;
 
@@ -164,7 +158,7 @@ async fn setup_follower() -> Result<()> {
     if let Ok(file) = OpenOptions::new().read(true).open("follower.db") {
         hashmap = replay(file)?;
     };
-    let log_file = create_log_file()?;
+    let log_file = create_log_file("follower.log")?;
     let file = Arc::new(Mutex::new(log_file));
     let hashmap = Arc::new(Mutex::new(hashmap));
 
@@ -185,13 +179,13 @@ async fn setup_leader() -> Result<()> {
     let mut stream = TcpStream::connect("localhost:48000").await?;
 
     let mut hashmap = HashMap::default();
-    if let Ok(file) = OpenOptions::new().read(true).open("log.db") {
+    if let Ok(file) = OpenOptions::new().read(true).open("leader.db") {
         hashmap = replay(file)?;
     };
 
-    dbg!(&hashmap);
+    let mut file = create_log_file("leader.log")?;
 
-    let mut file = create_log_file()?;
+    dbg!(&hashmap);
 
     loop {
         let readline = rl.readline(">> ");
